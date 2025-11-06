@@ -37,3 +37,4 @@ jobs:
         gcloud container clusters get-credentials autopilot-cluster-1 --region us-central1
         sed -i "s/GOOGLE_PROJECT/$GOOGLE_PROJECT/g" deployment.yaml
         kubectl apply -f deployment.yaml
+        kubectl get svc iris-api
