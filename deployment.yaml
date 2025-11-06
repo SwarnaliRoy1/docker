@@ -9,7 +9,7 @@ spec:
     app: iris-api
   ports:
   - port: 80
-    targetPort: 80
+    targetPort: 8080
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -30,3 +30,5 @@ spec:
       containers:
       - name: iris-api
         image: us-central1-docker.pkg.dev/GOOGLE_PROJECT/iris/iris-api:latest
+        ports:
+            - containerPort: 8080
