@@ -15,24 +15,27 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Set up gcloud with your service account
+      # 2. authorize gcloud 
+      - name: Auth to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
+      # 3. Set up gcloud with your service account
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ secrets.GOOGLE_PROJECT }}
-          service_account_key: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
-          export_default_credentials: true
 
-      # 3. Let Docker talk to Artifact Registry
+      # 4. Let Docker talk to Artifact Registry
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker us-central1-docker.pkg.dev
 
-      # 4. Build the image
+      # 5. Build the image
       - name: Build Docker image
         run: |
           docker build -t us-central1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/iris/iris-api:latest .
 
-      # 5. Push the image
+      # 6. Push the image
       - name: Push Docker image
         run: |
           docker push us-central1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/iris/iris-api:latest
