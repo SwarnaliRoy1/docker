@@ -180,104 +180,117 @@ jobs:
           CONCURRENCY1: ${{ github.event.inputs.conc1 || '1000' }}
           CONCURRENCY2: ${{ github.event.inputs.conc2 || '2000' }}
         run: |
-          get_rps() { grep -E "Requests/sec" "$1" | awk '{print $2}'; }
-          get_p50() { grep -E "^\s*50%" "$1" | awk '{print $2}'; }
-          get_p90() { grep -E "^\s*90%" "$1" | awk '{print $2}'; }
-          get_timeouts() { grep -E "timeout" "$1" | awk '{print $2}'; }
-
-          RPS_AUTO=$(get_rps wrk_autoscale.txt)
-          P50_AUTO=$(get_p50 wrk_autoscale.txt)
-          P90_AUTO=$(get_p90 wrk_autoscale.txt)
-          TO_AUTO=$(get_timeouts wrk_autoscale.txt)
-
-          RPS_NO1=$(get_rps wrk_noscale_c${CONCURRENCY1}.txt)
-          P50_NO1=$(get_p50 wrk_noscale_c${CONCURRENCY1}.txt)
-          P90_NO1=$(get_p90 wrk_noscale_c${CONCURRENCY1}.txt)
-          TO_NO1=$(get_timeouts wrk_noscale_c${CONCURRENCY1}.txt)
-
-          RPS_NO2=$(get_rps wrk_noscale_c${CONCURRENCY2}.txt)
-          P50_NO2=$(get_p50 wrk_noscale_c${CONCURRENCY2}.txt)
-          P90_NO2=$(get_p90 wrk_noscale_c${CONCURRENCY2}.txt)
-          TO_NO2=$(get_timeouts wrk_noscale_c${CONCURRENCY2}.txt)
-
-          cat > cml_report.md <<'EOF'
+          set -euo pipefail
+      
+          # Safe parsers for wrk output
+          get_rps() { awk '/Requests\/sec/ {print $2}' "$1"; }
+          get_p50() { awk '/^[[:space:]]*50%/ {print $2}' "$1"; }
+          get_p90() { awk '/^[[:space:]]*90%/ {print $2}' "$1"; }
+          get_timeouts() {
+            grep -Eo 'timeout[[:space:]]+[0-9]+' "$1" | awk '{print $2}' || true
+          }
+      
+          RPS_AUTO=$(get_rps wrk_autoscale.txt || echo "NA")
+          P50_AUTO=$(get_p50 wrk_autoscale.txt || echo "NA")
+          P90_AUTO=$(get_p90 wrk_autoscale.txt || echo "NA")
+          TO_AUTO=$(get_timeouts wrk_autoscale.txt || echo "0")
+      
+          RPS_NO1=$(get_rps "wrk_noscale_c${CONCURRENCY1}.txt" || echo "NA")
+          P50_NO1=$(get_p50 "wrk_noscale_c${CONCURRENCY1}.txt" || echo "NA")
+          P90_NO1=$(get_p90 "wrk_noscale_c${CONCURRENCY1}.txt" || echo "NA")
+          TO_NO1=$(get_timeouts "wrk_noscale_c${CONCURRENCY1}.txt" || echo "0")
+      
+          RPS_NO2=$(get_rps "wrk_noscale_c${CONCURRENCY2}.txt" || echo "NA")
+          P50_NO2=$(get_p50 "wrk_noscale_c${CONCURRENCY2}.txt" || echo "NA")
+          P90_NO2=$(get_p90 "wrk_noscale_c${CONCURRENCY2}.txt" || echo "NA")
+          TO_NO2=$(get_timeouts "wrk_noscale_c${CONCURRENCY2}.txt" || echo "0")
+      
+          # NOTE: no quotes on EOF so variables expand
+          cat > cml_report.md <<EOF
           # 📊 Iris API – Deploy, Autoscaling & Load Test Report
-
-          **Image:** `${IMAGE_URI}:${IMG_TAG}`  
-          **Service IP:** `${SERVICE_IP}`  
-          **Test duration:** `${DURATION}`  
-          **Namespace:** `${{ env.NAMESPACE }}`
-
-          ## ✅ Autoscaling Enabled (min=1, max=3), Concurrency `${CONCURRENCY1}`
+      
+          **Image:** \`${IMAGE_URI}:${IMG_TAG}\`  
+          **Service IP:** \`${SERVICE_IP}\`  
+          **Test duration:** \`${DURATION}\`  
+          **Namespace:** \`${NAMESPACE}\`
+      
+          ## ✅ Autoscaling Enabled (min=1, max=3), Concurrency \`${CONCURRENCY1}\`
           | Metric | Value |
           |---|---|
           | Requests/sec | ${RPS_AUTO} |
           | P50 latency | ${P50_AUTO} |
           | P90 latency | ${P90_AUTO} |
-          | Timeouts | ${TO_AUTO:-0} |
-
+          | Timeouts | ${TO_AUTO} |
+      
           <details>
           <summary>HPA & Pods after autoscale run</summary>
-
+      
           **HPA:**
-          ```text
+          \`\`\`text
           $(cat hpa_after_autoscale.txt)
-          ```
-
+          \`\`\`
+      
           **Pods:**
-          ```text
+          \`\`\`text
           $(cat pods_after_autoscale.txt)
-          ```
+          \`\`\`
           </details>
-
+      
           ## 🚫 Autoscaling Restricted (min=1, max=1)
-          **Concurrency `${CONCURRENCY1}`**
+      
+          **Concurrency \`${CONCURRENCY1}\`**
           | Metric | Value |
           |---|---|
           | Requests/sec | ${RPS_NO1} |
           | P50 latency | ${P50_NO1} |
           | P90 latency | ${P90_NO1} |
-          | Timeouts | ${TO_NO1:-0} |
-
+          | Timeouts | ${TO_NO1} |
+      
           <details>
           <summary>HPA & Pods after no-scale c=${CONCURRENCY1}</summary>
-
+      
           **HPA:**
-          ```text
+          \`\`\`text
           $(cat hpa_after_noscale_c${CONCURRENCY1}.txt)
-          ```
-
+          \`\`\`
+      
           **Pods:**
-          ```text
+          \`\`\`text
           $(cat pods_after_noscale_c${CONCURRENCY1}.txt)
-          ```
+          \`\`\`
           </details>
-
-          **Concurrency `${CONCURRENCY2}`**
+      
+          **Concurrency \`${CONCURRENCY2}\`**
           | Metric | Value |
           |---|---|
           | Requests/sec | ${RPS_NO2} |
           | P50 latency | ${P50_NO2} |
           | P90 latency | ${P90_NO2} |
-          | Timeouts | ${TO_NO2:-0} |
-
+          | Timeouts | ${TO_NO2} |
+      
           <details>
           <summary>HPA & Pods after no-scale c=${CONCURRENCY2}</summary>
-
+      
           **HPA:**
-          ```text
+          \`\`\`text
           $(cat hpa_after_noscale_c${CONCURRENCY2}.txt)
-          ```
-
+          \`\`\`
+      
           **Pods:**
-          ```text
+          \`\`\`text
           $(cat pods_after_noscale_c${CONCURRENCY2}.txt)
-          ```
+          \`\`\`
           </details>
-
+      
           ---
           _Published by GitHub Actions + CML._
           EOF
-
+      
           echo "report_path=cml_report.md" >> $GITHUB_OUTPUT
-          cml comment create --publish --markdown cml_report.md
+      
+          # Call CML without npx; setup-cml puts it on PATH
+          cml --version
+          cml comment create --publish cml_report.md
+      
+                echo "report_path=cml_report.md" >> $GITHUB_OUTPUT
+                cml comment create --publish --markdown cml_report.md
