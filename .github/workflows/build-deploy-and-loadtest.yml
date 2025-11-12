@@ -291,6 +291,3 @@ jobs:
           # Call CML without npx; setup-cml puts it on PATH
           cml --version
           cml comment create --publish cml_report.md
-      
-                echo "report_path=cml_report.md" >> $GITHUB_OUTPUT
-                cml comment create --publish --markdown cml_report.md
