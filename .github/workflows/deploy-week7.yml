@@ -1,0 +1,55 @@
+name: Build & Deploy to GKE (week7)
+
+on:
+  push:
+    branches: [ "week7" ]
+  pull_request:
+    branches: [ "week7" ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Auth using your SA JSON secret
+      - name: Google auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
+
+      - name: Install gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: 'gke-gcloud-auth-plugin'
+
+      - name: Configure Docker for GAR
+        run: gcloud auth configure-docker us-central1-docker.pkg.dev -q
+
+      - name: Build & Push image
+        env:
+          GOOGLE_PROJECT: ${{ secrets.GOOGLE_PROJECT }}
+        run: |
+          IMAGE="us-central1-docker.pkg.dev/$GOOGLE_PROJECT/my-repo/iris-api"
+          docker build -t "$IMAGE:latest" -t "$IMAGE:${GITHUB_SHA::7}" .
+          docker push "$IMAGE:${GITHUB_SHA::7}"
+          docker push "$IMAGE:latest"
+
+      - name: Get GKE credentials
+        env:
+          GOOGLE_PROJECT: ${{ secrets.GOOGLE_PROJECT }}
+        run: |
+          gcloud container clusters get-credentials week7-log-ml-cluster \
+            --zone us-central1-a --project "$GOOGLE_PROJECT"
+
+      - name: Apply manifests
+        env:
+          GOOGLE_PROJECT: ${{ secrets.GOOGLE_PROJECT }}
+        run: |
+          sed -i "s/GOOGLE_PROJECT/$GOOGLE_PROJECT/g" deployment.yaml
+          kubectl apply -f deployment.yaml
+          kubectl rollout status deployment/iris-api --timeout=300s
+
+      - name: Show service
+        run: kubectl get svc iris-api

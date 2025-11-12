@@ -1,0 +1,105 @@
+name: Load Test + CML (week7)
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: "wrk duration (e.g., 60s or 5m)"
+        required: true
+        default: "60s"
+      concurrency:
+        description: "Connections"
+        required: true
+        default: "1000"
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  loadtest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (to get post.lua)
+        uses: actions/checkout@v4
+
+      - name: Google auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
+
+      - name: Install gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: 'gke-gcloud-auth-plugin'
+
+      - name: Get GKE credentials
+        env:
+          GOOGLE_PROJECT: ${{ secrets.GOOGLE_PROJECT }}
+        run: |
+          gcloud container clusters get-credentials week7-log-ml-cluster \
+            --zone us-central1-a --project "$GOOGLE_PROJECT"
+
+      - name: Get Service IP
+        id: ip
+        run: |
+          for i in {1..30}; do
+            IP=$(kubectl get svc iris-api -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+            if [ -n "$IP" ]; then
+              echo "service_ip=$IP" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "No LB IP" >&2; exit 1
+
+      - name: Install wrk
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wrk
+
+      - name: Ensure post.lua exists
+        run: |
+          test -f post.lua || (echo "post.lua not found at repo root" && exit 1)
+
+      - name: Run wrk
+        env:
+          SERVICE_IP: ${{ steps.ip.outputs.service_ip }}
+          DURATION: ${{ github.event.inputs.duration }}
+          CONCURRENCY: ${{ github.event.inputs.concurrency }}
+        run: |
+          wrk -t4 -c${CONCURRENCY} -d${DURATION} --latency -s post.lua http://${SERVICE_IP}:80 | tee wrk.txt
+
+      - name: Set up CML
+        uses: iterative/setup-cml@v2
+
+      - name: Publish CML report
+        env:
+          REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SERVICE_IP: ${{ steps.ip.outputs.service_ip }}
+        run: |
+          RPS=$(grep -E "Requests/sec" wrk.txt | awk '{print $2}')
+          P50=$(grep -E "^\s*50%" wrk.txt | awk '{print $2}')
+          P90=$(grep -E "^\s*90%" wrk.txt | awk '{print $2}')
+          TO=$(grep -E "timeout" wrk.txt | awk '{print $2}')
+
+          cat > report.md <<EOF
+          # Iris API – Load Test
+          **Service IP:** ${SERVICE_IP}  
+          **Duration:** ${DURATION}  
+          **Concurrency:** ${CONCURRENCY}
+
+          | Metric | Value |
+          |---|---|
+          | Requests/sec | ${RPS} |
+          | P50 latency  | ${P50} |
+          | P90 latency  | ${P90} |
+          | Timeouts     | ${TO:-0} |
+
+          \`\`\`
+          $(cat wrk.txt)
+          \`\`\`
+          EOF
+
+          npx cml comment create --publish report.md
