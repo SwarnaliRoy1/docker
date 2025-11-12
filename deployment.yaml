@@ -1,3 +1,4 @@
+# service.yaml
 ---
 apiVersion: v1
 kind: Service
@@ -10,6 +11,8 @@ spec:
   ports:
     - port: 80
       targetPort: 8200
+
+# deployment.yaml
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -18,7 +21,7 @@ metadata:
   labels:
     app: iris-api
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: iris-api
@@ -27,11 +30,11 @@ spec:
       labels:
         app: iris-api
     spec:
+      # if you created a KSA bound to GCP (Workload Identity), put that name here
       serviceAccountName: telemetry-access
       containers:
         - name: iris-api
-          image: us-central1-docker.pkg.dev/precise-braid-474114-m3/my-repo/iris-api:v1
-          imagePullPolicy: Always
+          image: us-central1-docker.pkg.dev/precise-braid-474114-m3/my-repo/iris-api:v2
           ports:
             - containerPort: 8200
           readinessProbe:
@@ -46,6 +49,15 @@ spec:
               port: 8200
             initialDelaySeconds: 15
             periodSeconds: 20
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+
+# hpa.yaml
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
@@ -55,7 +67,7 @@ spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: iris-api
+    name: iris-api   
   minReplicas: 1
   maxReplicas: 3
   metrics:
