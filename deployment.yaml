@@ -8,8 +8,8 @@ spec:
   selector:
     app: iris-api
   ports:
-  - port: 80
-    targetPort: 8200
+    - port: 80
+      targetPort: 8200
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -27,6 +27,41 @@ spec:
       labels:
         app: iris-api
     spec:
+      serviceAccountName: telemetry-access
       containers:
-      - name: iris-api
-        image: us-central1-docker.pkg.dev/GOOGLE_PROJECT/iris/iris-api:latest
+        - name: iris-api
+          image: us-central1-docker.pkg.dev/precise-braid-474114-m3/my-repo/iris-api:v1
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8200
+          readinessProbe:
+            httpGet:
+              path: /ready_check
+              port: 8200
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /live_check
+              port: 8200
+            initialDelaySeconds: 15
+            periodSeconds: 20
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: iris-api-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: iris-api
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60
